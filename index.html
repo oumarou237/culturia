@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Culturia</title>
+<style>
+:root{--panel:#f7f8fc;--ink:#14172b;--mut:#4d5373;--line:#c9cee4;--pri:#5a49d6;--onpri:#fff;--bg:#e9edf7;
+ box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--panel:#171b38;--ink:#eceffb;--mut:#a9b0d6;--line:#343b6b;--pri:#8c7dff;--onpri:#0e1124;--bg:#0f1226;color-scheme:dark}}
+:root[data-theme="dark"]{--panel:#171b38;--ink:#eceffb;--mut:#a9b0d6;--line:#343b6b;--pri:#8c7dff;--onpri:#0e1124;--bg:#0f1226;color-scheme:dark}
+html,body{height:100%;margin:0;background:#0c1020;color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
+canvas{display:block;position:fixed;inset:0;width:100%;height:100%;touch-action:none}
+#ui{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(31rem,calc(100% - 2rem));max-height:calc(100% - 2rem);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:1.1rem 1.2rem}
+h1{font:600 1.6rem/1.2 Georgia,"Times New Roman",serif;margin:0 0 .4rem}
+p{margin:.3rem 0 .8rem;color:var(--mut);font-size:.93rem}
+.row{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.8rem}
+button{font:600 .95rem system-ui,sans-serif;border-radius:10px;padding:.7rem 1rem;border:1px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer;min-height:44px}
+button.pri{background:var(--pri);color:var(--onpri);border-color:var(--pri)}
+button:disabled{opacity:.5;cursor:not-allowed}
+button:focus-visible{outline:3px solid var(--pri);outline-offset:2px}
+#note{font-size:.85rem;color:var(--mut);margin-top:.7rem;min-height:1.2rem}
+#bar{position:fixed;right:.8rem;bottom:calc(env(safe-area-inset-bottom,0px) + .8rem);display:none}
+#bar button{background:var(--panel)}
+#hint{position:fixed;top:calc(env(safe-area-inset-top,0px) + .7rem);left:0;right:0;text-align:center;color:#c9cee4;font-size:.85rem;display:none;padding:0 1rem;text-shadow:0 1px 3px #000}
+</style>
+</head>
+<body>
+<div id="ui" role="dialog" aria-labelledby="t">
+ <h1 id="t">Culturia</h1>
+ <p>Le village de Kaïro a disparu, faute de savoir lire les signes. Pour remonter le temps et le sauver, il doit vaincre quatre mages gardiens du savoir, puis le Sorcier du Temps. Ici, on ne se bat pas avec des armes : chaque bonne réponse invoque un pouvoir et fait grandir tes compétences.</p>
+ <p>Histoire, géographie, sciences, arts et lettres. Tu incarnes le héros, et tes mains remplacent les manettes. Tes progrès sont sauvegardés.</p>
+ <div class="row"><button class="pri" id="ar" disabled>Réalité mixte (mains)</button><button id="vr" disabled>Arène en VR (mains)</button><button id="pv">Jouer en aperçu 3D</button></div>
+ <div id="note"></div>
+</div>
+<div id="hint">Touche une tablette pour invoquer ta réponse. Touche les sorts rouges pour les parer.</div>
+<div id="bar"><button id="b-menu">Menu</button></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const $=s=>document.querySelector(s),T=THREE,rnd=(a,b)=>a+Math.random()*(b-a),clamp=(x,a,b)=>Math.max(a,Math.min(b,x)),shuf=a=>a.slice().sort(()=>Math.random()-0.5);
+// ---------- histoire et questions ----------
+const CAT={"Histoire":0xffb25e,"Géographie":0x7fd08a,"Sciences":0x4fd1ff,"Arts & Lettres":0xff7ad9};
+const PRO=[["Le conteur","Il y a un mois, le village de Kéla vivait en paix au bord du grand fleuve. Personne n’avait appris à lire les signes : la crue, les étoiles, les chroniques des anciens.","#d7dbf5",150],
+["Le conteur","Une nuit, le fleuve est sorti de son lit. Le village a disparu. Seul un jeune garçon a survécu : Kaïro.","#d7dbf5",150],
+["Ahsa, le Chronomage","Kaïro, tu peux remonter le temps, mais l’horloge est brisée en quatre éclats. Chaque éclat est gardé par un mage.","#ffd479",190],
+["Ahsa, le Chronomage","Ici, on ne se bat pas avec des armes, mais avec des réponses. Chaque bonne réponse éveille un pouvoir en toi.","#ffd479",190],
+["Kaïro","Alors j’apprendrai. Plus jamais mon village ne disparaîtra faute de savoir.","#ff9a6b",230]];
+const E=[
+{n:"Maître Orlan",t:"Gardien de l’Histoire",place:"La Forêt des Chroniques",cat:"Histoire",c:0xffb25e,tint:0xffd9a8,
+ intro:["Un enfant de Kéla… Le temps ne pardonne pas à ceux qui oublient.","Mes chroniques racontent les siècles. Voyons si tu connais le passé."],
+ win:["Le premier éclat est à toi. Tu portes la mémoire des peuples.","Va vers les Cartes Mouvantes. Dame Zéphyra t’y attend."],
+ qs:[["En quelle année a débuté la Première Guerre mondiale ?","1914","1912","1918"],
+  ["Quel peuple a construit le Colisée ?","Les Romains","Les Grecs","Les Byzantins"],
+  ["Qui fut le premier président du Ghana indépendant ?","Kwame Nkrumah","Julius Nyerere","Léopold Senghor"],
+  ["En quelle année Napoléon fut-il sacré empereur ?","1804","1799","1815"],
+  ["Quelle civilisation a bâti les pyramides de Gizeh ?","L’Égypte ancienne","Les Mayas","Les Aztèques"]]},
+{n:"Dame Zéphyra",t:"Gardienne des Terres",place:"Les Cartes Mouvantes",cat:"Géographie",c:0x7fd08a,tint:0xa8ffd1,
+ intro:["Les montagnes bougent, les fleuves changent de lit. Ton village l’a appris trop tard.","Dis-moi où tu poses le pied, jeune voyageur."],
+ win:["Tu sais lire les cartes… et peut-être bientôt les signes.","La Tour des Étoiles est proche. Seigneur Vexar y mesure le monde."],
+ qs:[["Quelle est la capitale de l’Australie ?","Canberra","Sydney","Melbourne"],
+  ["Quel est le plus grand désert chaud du monde ?","Le Sahara","Le Kalahari","Le désert d’Arabie"],
+  ["Quel fleuve traverse Paris ?","La Seine","La Loire","Le Rhône"],
+  ["Quel est le plus haut sommet du monde ?","L’Everest","Le K2","Le Kilimandjaro"],
+  ["Quel pays compte le plus d’habitants en Afrique ?","Le Nigéria","L’Éthiopie","L’Égypte"]]},
+{n:"Seigneur Vexar",t:"Alchimiste des Étoiles",place:"La Tour des Étoiles",cat:"Sciences",c:0x4fd1ff,tint:0xa8e6ff,
+ intro:["Si ton village avait compris les crues et les astres, il serait encore debout.","La science ne ment jamais. Réponds, apprenti."],
+ win:["Tes réponses brillent comme des étoiles. Le troisième éclat t’appartient.","Dernier mage : Lyrel, dans la Bibliothèque Vivante."],
+ qs:[["Quelle est la formule chimique de l’eau ?","H₂O","CO₂","NaCl"],
+  ["Quelle planète est la plus proche du Soleil ?","Mercure","Vénus","Mars"],
+  ["Combien d’os compte le corps humain adulte ?","206","186","256"],
+  ["Quel gaz les plantes absorbent-elles pour la photosynthèse ?","Le dioxyde de carbone","L’oxygène","L’azote"],
+  ["Quelle est approximativement la vitesse de la lumière ?","300 000 km/s","150 000 km/s","30 000 km/s"]]},
+{n:"Lyrel",t:"Archimage des Lettres et des Arts",place:"La Bibliothèque Vivante",cat:"Arts & Lettres",c:0xff7ad9,tint:0xffa8e6,
+ intro:["Un peuple qui oublie ses histoires et ses chansons s’éteint doucement.","Chaque livre ici attend une réponse. Fais-les parler."],
+ win:["Les livres chuchotent ton nom. Les quatre éclats sont réunis.","L’horloge se remonte… mais Chronos l’Oublié t’attend dans le couloir du temps."],
+ qs:[["Qui a écrit « Le Petit Prince » ?","Antoine de Saint-Exupéry","Jules Verne","Victor Hugo"],
+  ["Qui a peint « La Nuit étoilée » ?","Vincent van Gogh","Claude Monet","Pablo Picasso"],
+  ["Quel écrivain africain a reçu le prix Nobel de littérature en 1986 ?","Wole Soyinka","Chinua Achebe","Léopold Senghor"],
+  ["Qui a composé l’« Ode à la joie » de la Neuvième Symphonie ?","Beethoven","Mozart","Bach"],
+  ["Qui a écrit « Roméo et Juliette » ?","Shakespeare","Molière","Dante"]]},
+{n:"Chronos l’Oublié",t:"Le Sorcier du Temps",place:"Le Couloir du Temps",cat:"Histoire",c:0xff5577,tint:0xffa8b0,boss:1,
+ intro:["Tu veux changer le passé ? Le passé ne se change pas : il s’efface.","Tout ce que tu as appris, je l’avalerai. Réponds, si tu l’oses."],
+ win:["L’horloge s’emballe. Kaïro revient la veille de la crue.","Cette fois, il sait lire les signes : le niveau du fleuve, les étoiles, les chroniques. Il alerte le village à temps.","Kéla est sauvé. Savoir, c’est aussi ne pas oublier."],
+ qs:[["Quel siècle a vu naître le Web grand public ?","Le XXe siècle","Le XVIIIe siècle","Le XXIe siècle"],
+  ["Qui a écrit « Ainsi parlait Zarathoustra » ?","Nietzsche","Kant","Descartes","Arts & Lettres"],
+  ["Quel est le plus grand organe du corps humain ?","La peau","Le foie","Les poumons","Sciences"],
+  ["Quel pays a offert la statue de la Liberté aux États-Unis ?","La France","L’Angleterre","L’Italie"],
+  ["Combien de pays d’Afrique sont membres de l’ONU ?","54","48","60","Géographie"],
+  ["Que signifie « ubuntu » dans plusieurs langues bantoues ?","Humanité envers les autres","Terre ancestrale","Courage au combat","Arts & Lettres"],
+  ["Quel instrument mesure les tremblements de terre ?","Le sismographe","Le baromètre","Le thermomètre","Sciences"]]}];
+let best=0;try{best=+localStorage.getItem("duel-best")||0}catch(e){}
+// ---------- audio ----------
+let ac;function tone(f,d=0.18,v=0.05,type="sine",at=0){try{ac=ac||new(window.AudioContext||window.webkitAudioContext)();const o=ac.createOscillator(),g=ac.createGain(),t=ac.currentTime+at;
+ o.type=type;o.frequency.value=f;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t+d);o.connect(g).connect(ac.destination);o.start(t);o.stop(t+d+0.05)}catch(e){}}
+const snd={ok:()=>{tone(660,0.25);tone(880,0.4,0.05,"sine",0.1);tone(1320,0.5,0.03,"sine",0.2)},bad:()=>{tone(180,0.4,0.06,"sawtooth");tone(150,0.4,0.05,"sawtooth",0.12)},
+ hit:()=>tone(90,0.35,0.08,"square"),pop:()=>tone(300+Math.random()*200,0.12,0.04,"triangle"),voice:f=>{for(let i=0;i<5;i++)tone(f+rnd(-30,30),0.07,0.03,"triangle",i*0.07)},win:()=>[523,659,784,1046].forEach((f,i)=>tone(f,0.5,0.05,"sine",i*0.14))};
+// ---------- rendu ----------
+const renderer=new T.WebGLRenderer({antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.outputEncoding=T.sRGBEncoding;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.05;
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;renderer.xr.enabled=true;document.body.appendChild(renderer.domElement);
+const scene=new T.Scene(),camera=new T.PerspectiveCamera(68,1,0.05,60);camera.position.set(0,1.6,0);camera.rotation.order="YXZ";
+function resize(){renderer.setSize(innerWidth,innerHeight);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix()}addEventListener("resize",resize);resize();
+function tex(w,h,fn,rx=1,ry=1){const c=document.createElement("canvas");c.width=w;c.height=h;fn(c.getContext("2d"),w,h);const t=new T.CanvasTexture(c);t.encoding=T.sRGBEncoding;t.wrapS=t.wrapT=T.RepeatWrapping;t.repeat.set(rx,ry);t.anisotropy=4;return t}
+scene.add(new T.HemisphereLight(0xb9c2ff,0x2b2433,0.7));
+const sun=new T.DirectionalLight(0xffe2b8,1.0);sun.position.set(2.5,5,3);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);Object.assign(sun.shadow.camera,{left:-5,right:5,top:5,bottom:-5,near:1,far:14});sun.shadow.bias=-0.0005;scene.add(sun);
+const enemyLight=new T.PointLight(0xffffff,1.2,7);enemyLight.position.set(0,2.2,-2.2);scene.add(enemyLight);
+const room=new T.Group();scene.add(room);
+const stone=tex(512,512,(g,w,h)=>{g.fillStyle="#3a3849";g.fillRect(0,0,w,h);for(let y=0;y<8;y++)for(let x=0;x<8;x++){const l=rnd(48,74)|0;g.fillStyle=`rgb(${l},${l-3},${l+8})`;g.fillRect(x*64+2,y*64+2,60,60)}},6,6);
+const floor=new T.Mesh(new T.CircleGeometry(4.6,64),new T.MeshStandardMaterial({map:stone,roughness:0.8,metalness:0.05}));floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;room.add(floor);
+const plaster=tex(256,256,(g,w,h)=>{g.fillStyle="#2b2f55";g.fillRect(0,0,w,h);for(let i=0;i<2600;i++){g.fillStyle=`rgba(255,255,255,${rnd(0,0.05)})`;g.fillRect(rnd(0,w),rnd(0,h),2,2)}},5,1);
+const wall=new T.Mesh(new T.CylinderGeometry(4.6,4.6,3.6,48,1,true),new T.MeshStandardMaterial({map:plaster,roughness:0.95,side:T.BackSide}));wall.position.y=1.8;room.add(wall);
+const sky=tex(512,256,(g,w,h)=>{const gr=g.createLinearGradient(0,0,0,h);gr.addColorStop(0,"#05071a");gr.addColorStop(1,"#1b2150");g.fillStyle=gr;g.fillRect(0,0,w,h);for(let i=0;i<260;i++){g.fillStyle=`rgba(255,255,255,${rnd(0.3,1)})`;g.fillRect(rnd(0,w),rnd(0,h),rnd(1,2.2),rnd(1,2.2))}});
+const dome=new T.Mesh(new T.SphereGeometry(4.6,32,16,0,Math.PI*2,0,Math.PI/2),new T.MeshBasicMaterial({map:sky,side:T.BackSide}));dome.position.y=3.6;room.add(dome);
+const pm=new T.MeshStandardMaterial({color:0x6a6a82,roughness:0.7,metalness:0.1});
+for(let i=0;i<10;i++){const a=i/10*Math.PI*2,p=new T.Mesh(new T.CylinderGeometry(0.17,0.2,3.2,16),pm);p.position.set(Math.sin(a)*4.2,1.6,-Math.cos(a)*4.2);p.castShadow=true;room.add(p)}
+[[-3,-3],[3,-3],[-3,3],[3,3]].forEach(([x,z])=>{const f=new T.Mesh(new T.SphereGeometry(0.09,10,8),new T.MeshBasicMaterial({color:0xffb25e}));f.position.set(x,1.3,z);room.add(f);const l=new T.PointLight(0xffa24a,0.6,6);l.position.set(x,1.4,z);room.add(l)});
+const shadowFloor=new T.Mesh(new T.CircleGeometry(4.6,48),new T.ShadowMaterial({opacity:0.35}));shadowFloor.rotation.x=-Math.PI/2;shadowFloor.receiveShadow=true;shadowFloor.visible=false;scene.add(shadowFloor);
+// ---------- textes ----------
+function wrap(g,text,x,y,maxW,lh){let line="",yy=y;for(const w of text.split(" ")){const t=line?line+" "+w:w;if(g.measureText(t).width>maxW&&line){g.fillText(line,x,yy);line=w;yy+=lh}else line=t}g.fillText(line,x,yy);return yy}
+function label(w,h,fn,px=600){const c=document.createElement("canvas");c.width=w*px;c.height=h*px;const g=c.getContext("2d"),t=new T.CanvasTexture(c);t.encoding=T.sRGBEncoding;
+ const m=new T.Mesh(new T.PlaneGeometry(w,h),new T.MeshBasicMaterial({map:t,transparent:true,depthWrite:false}));m.userData.draw=(...a)=>{g.clearRect(0,0,c.width,c.height);fn(g,c.width,c.height,...a);t.needsUpdate=true};return m}
+function rr(g,x,y,w,h,r){g.beginPath();if(g.roundRect)g.roundRect(x,y,w,h,r);else g.rect(x,y,w,h)}
+function tablet(w,h,fn,px=900){const c=document.createElement("canvas");c.width=w*px;c.height=h*px;const g=c.getContext("2d"),t=new T.CanvasTexture(c);t.encoding=T.sRGBEncoding;
+ const edge=new T.MeshStandardMaterial({color:0x8c7dff,roughness:0.4,emissive:0x8c7dff,emissiveIntensity:0.5}),fr=new T.MeshStandardMaterial({map:t,roughness:0.6,emissive:0xffffff,emissiveMap:t,emissiveIntensity:0.35});
+ const m=new T.Mesh(new T.BoxGeometry(w,h,0.03),[edge,edge,edge,edge,fr,edge]);m.castShadow=true;m.userData.tw=w;m.userData.th=h;m.visible=false;
+ m.userData.draw=(...a)=>{g.clearRect(0,0,c.width,c.height);fn(g,c.width,c.height,...a);t.needsUpdate=true};return m}
+const panel=label(1.7,0.6,(g,w,h,name,text,col)=>{g.fillStyle="rgba(14,17,36,0.82)";rr(g,4,4,w-8,h-8,28);g.fill();g.strokeStyle=col;g.lineWidth=5;g.stroke();g.fillStyle=col;g.font="700 "+h*0.1+"px Georgia,serif";g.textAlign="left";g.fillText(name,36,h*0.2);
+ g.fillStyle="#eceffb";g.font="500 "+h*0.082+"px Georgia,serif";wrap(g,text,36,h*0.36,w-72,h*0.105)},800);panel.position.set(0,1.75,-1.45);panel.visible=false;scene.add(panel);
+const scroll=label(1.5,0.5,(g,w,h,t)=>{g.fillStyle="rgba(235,225,200,0.96)";rr(g,4,4,w-8,h-8,24);g.fill();g.strokeStyle="#7a5a2e";g.lineWidth=8;g.stroke();g.fillStyle="#2a2012";let s=h*0.16;g.textAlign="center";
+ for(;s>16;s-=3){g.font="600 "+s+"px Georgia,serif";if(Math.ceil(g.measureText(t).width/(w-90))*s*1.25<h-60)break}const lines=[];let ln="";t.split(" ").forEach(x=>{const k=ln?ln+" "+x:x;if(g.measureText(k).width>w-90&&ln){lines.push(ln);ln=x}else ln=k});lines.push(ln);
+ lines.forEach((l,i)=>g.fillText(l,w/2,h/2-(lines.length-1)*s*0.6+i*s*1.25+s*0.3))},800);scroll.position.set(0,2.3,-1.7);scroll.visible=false;scene.add(scroll);
+const hudL=label(1.6,0.2,(g,w,h,t)=>{g.fillStyle="#eceffb";g.font="600 "+h*0.42+"px system-ui,sans-serif";g.textAlign="center";g.fillText(t,w/2,h*0.66)});hudL.position.set(0,2.9,-1.7);scene.add(hudL);
+const ban=label(1.7,0.5,(g,w,h,t)=>{g.fillStyle="#fff";g.shadowColor="#000";g.shadowBlur=14;g.font="700 "+h*0.34+"px Georgia,serif";g.textAlign="center";g.fillText(t,w/2,h*0.62)});ban.position.set(0,1.6,-1.2);scene.add(ban);ban.material.opacity=0;ban.userData.t=0;
+const say=(t,s=1.8)=>{ban.userData.draw(t);ban.userData.t=s};
+const optT=[0,1,2].map(k=>{const m=tablet(0.46,0.15,(g,w,h,t,st)=>{g.fillStyle=st==="ok"?"#1f8a6a":st==="bad"?"#a83a3a":"#241f4a";rr(g,3,3,w-6,h-6,18);g.fill();g.fillStyle="#eceffb";g.font="600 "+h*0.27+"px system-ui,sans-serif";g.textAlign="center";
+ const lines=[];let ln="";t.split(" ").forEach(x=>{const q=ln?ln+" "+x:x;if(g.measureText(q).width>w-30&&ln){lines.push(ln);ln=x}else ln=q});lines.push(ln);lines.forEach((l,i)=>g.fillText(l,w/2,h/2+h*0.09-(lines.length-1)*h*0.15+i*h*0.3))});
+ const a=(k-1)*0.62;m.position.set(Math.sin(a)*1.05,1.0+(k===1?0.06:0),-Math.cos(a)*1.05);m.rotation.y=-a;scene.add(m);m.userData.act=()=>pick(k);return m});
+const goT=tablet(0.5,0.14,(g,w,h,t)=>{g.fillStyle="#5a49d6";rr(g,3,3,w-6,h-6,h/2);g.fill();g.fillStyle="#fff";g.font="700 "+h*0.38+"px system-ui,sans-serif";g.textAlign="center";g.fillText(t,w/2,h*0.64)});goT.position.set(0,0.95,-0.95);scene.add(goT);goT.userData.act=()=>nextLine();
+// ---------- personnages ----------
+let enemy=null;
+function makeEnemy(d){const g=new T.Group(),k=d.boss?1.35:1;g.scale.setScalar(k);
+ const robe=new T.Mesh(new T.ConeGeometry(0.42,1.5,24),new T.MeshStandardMaterial({color:0x1a1630,emissive:d.c,emissiveIntensity:0.18,roughness:0.6}));robe.position.y=0.75;robe.castShadow=true;g.add(robe);
+ const sh=new T.Mesh(new T.SphereGeometry(0.27,16,10),robe.material);sh.scale.set(1.3,0.5,0.7);sh.position.y=1.4;g.add(sh);
+ const head=new T.Mesh(new T.SphereGeometry(0.17,18,14),new T.MeshStandardMaterial({color:0xe9e3f5,roughness:0.5}));head.position.y=1.68;head.castShadow=true;g.add(head);
+ const mask=new T.Mesh(new T.SphereGeometry(0.175,18,14,0,Math.PI*2,0,Math.PI*0.62),new T.MeshStandardMaterial({color:d.c,emissive:d.c,emissiveIntensity:0.5,roughness:0.3}));mask.position.set(0,1.68,0.025);mask.rotation.x=Math.PI/2.2;g.add(mask);
+ [-1,1].forEach(x=>{const e=new T.Mesh(new T.SphereGeometry(0.025,8,6),new T.MeshBasicMaterial({color:0xffffff}));e.position.set(x*0.065,1.7,0.16);g.add(e)});
+ const halo=new T.Mesh(new T.TorusGeometry(0.26,0.012,8,40),new T.MeshBasicMaterial({color:d.c}));halo.position.y=2.0;halo.rotation.x=Math.PI/2.4;g.add(halo);
+ const runes=[];for(let i=0;i<(d.boss?8:5);i++){const r=new T.Mesh(new T.OctahedronGeometry(0.06),new T.MeshStandardMaterial({color:d.c,emissive:d.c,emissiveIntensity:0.9,roughness:0.2}));g.add(r);runes.push(r)}
+ const bar=new T.Mesh(new T.PlaneGeometry(0.7,0.04),new T.MeshBasicMaterial({color:0xff5577}));bar.position.set(0,2.35,0);g.add(bar);
+ g.userData={runes,bar,halo,hit:0,fire:0,die:0,k,base:new T.Vector3(0,0,-2.9),c:d.c};g.position.copy(g.userData.base);g.traverse(o=>{if(o.isMesh)o.userData.enemy=1});scene.add(g);enemyLight.color.setHex(d.c);return g}
+function lv(x){return x>=12?3:x>=6?2:x>=2?1:0}
+function loadSk(){let o={};try{o=JSON.parse(localStorage.getItem("culturia-v1")||"{}")}catch(e){}return Object.fromEntries(Object.keys(CAT).map(k=>[k,+o[k]||0]))}
+function saveSk(){try{localStorage.setItem("culturia-v1",JSON.stringify(S.sk))}catch(e){}}
+function maxhp(){return 5+Math.floor(Object.values(S.sk).reduce((a,x)=>a+lv(x),0)/3)}
+function makeHero(){const g=new T.Group(),m=(c,e=0)=>new T.MeshStandardMaterial({color:c,emissive:c,emissiveIntensity:e,roughness:0.6});
+ const body=new T.Mesh(new T.ConeGeometry(0.2,0.85,16),m(0x2a3a7a));body.position.y=0.45;body.castShadow=true;g.add(body);
+ const head=new T.Mesh(new T.SphereGeometry(0.13,16,12),m(0xf0c9a0));head.position.y=1.03;head.castShadow=true;g.add(head);
+ for(let i=0;i<5;i++){const h=new T.Mesh(new T.ConeGeometry(0.05,0.2,6),m(0x1a1230));const a=i/4*Math.PI-Math.PI/2;h.position.set(Math.sin(a)*0.1,1.17,0.0
